@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Feliz 21 de Septiembre - Paisaje Realista</title>
+    <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Montserrat:wght@300&display=swap" rel="stylesheet">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            touch-action: none; /* Evitar zoom o scroll accidental en móviles */
+        }
+
+        body {
+            background-color: #010310;
+            overflow: hidden;
+            font-family: 'Great Vibes', cursive;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #sceneCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            pointer-events: none; 
+        }
+
+        #text-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+            pointer-events: none;
+            overflow: hidden;
+        }
+
+        .floating-text {
+            position: absolute;
+            color: #fff8d6;
+            text-align: center;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.9), 
+                         0 0 20px rgba(255, 165, 0, 0.8), 
+                         0 0 35px rgba(255, 140, 0, 0.6),
+                         2px 2px 5px rgba(0,0,0,1);
+            opacity: 0;
+            will-change: transform, opacity;
+            letter-spacing: 2px;
+            white-space: nowrap;
+        }
+
+        @media (max-width: 768px) {
+            .floating-text {
+                white-space: normal;
+                width: 90%;
+            }
+        }
+
+        /* Animación extremadamente lenta para legibilidad */
+        @keyframes floatUpSlow {
+            0% {
+                transform: translateY(105vh) scale(0.8);
+                opacity: 0;
+                filter: blur(3px);
+            }
+            15% {
+                opacity: 1;
+                filter: blur(0px);
+                transform: translateY(75vh) scale(1);
+            }
+            85% {
+                opacity: 1;
+                filter: blur(0px);
+            }
+            100% {
+                transform: translateY(-20vh) scale(1.1);
+                opacity: 0;
+                filter: blur(3px);
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="sceneCanvas"></canvas>
+    <div id="text-container"></div>
+
+    <script>
+        const canvas = document.getElementById('sceneCanvas');
+        const ctx = canvas.getContext('2d');
+        const textContainer = document.getElementById('text-container');
+
+        let width, height, dpr;
+        let time = 0;
+        let cycleTime = 0.1; // 0.0 = Medianoche, 0.25 = Amanecer, 0.5 = Mediodía, 0.75 = Atardecer
+        const cycleSpeed = 0.0003; // Velocidad del ciclo día/noche
+
+        // Paletas de color para el ciclo (Interpolación de 5 puntos: Medianoche -> Amanecer -> Mediodía -> Atardecer -> Medianoche)
+        const pSkyTop = ['#010414', '#1a2a6c', '#4CB8C4', '#3c1854', '#010414'];
+        const pSkyBot = ['#0a1636', '#fd746c', '#bdf1ff', '#e85d04', '#0a1636'];
+        const pMountShadow = ['#060a14', '#1f1315', '#163321', '#1a0e14', '#060a14'];
+        const pMountHighlight = ['#131e33', '#8f4f38', '#4b7d3a', '#73313d', '#131e33'];
+        const pPineShadow = ['#020805', '#12100d', '#0b2413', '#0f0a0c', '#020805'];
+        const pPineHighlight = ['#061a11', '#4a3224', '#265431', '#3b1c24', '#061a11'];
+        
+        // Estructuras de caché geométrico
+        let cachedStars = [];
+        let cachedMountains = [];
+        let cachedTrees = [];
+        let clouds = [];
+        let flowers = [];
+        let pollenParticles = [];
+
+        const phrases = [
+            "Eres mi sol en la noche",
+            "Mi flor más hermosa",
+            "Brillas en mi oscuridad",
+            "Feliz 21 de septiembre",
+            "Siempre floreces en mi corazón",
+            "Magia en tu sonrisa",
+            "Mi paisaje favorito eres tú",
+            "Iluminas mis noches",
+            "Un amor que nunca se marchita",
+            "Mi refugio y mi luz"
+        ];
+
+        // Utilidades de interpolación de colores
+        function hex2rgb(hex) {
+            const v = parseInt(hex.replace('#', ''), 16);
+            return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+        }
+        function rgb2hex(r, g, b) {
+            return "#" + (1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1);
+        }
+        function lerpColor(c1, c2, t) {
+            const rgb1 = hex2rgb(c1);
+            const rgb2 = hex2rgb(c2);
+            const r = Math.round(rgb1[0] + (rgb2[0] - rgb1[0]) * t);
+            const g = Math.round(rgb1[1] + (rgb2[1] - rgb1[1]) * t);
+            const b = Math.round(rgb1[2] + (rgb2[2] - rgb1[2]) * t);
+            return rgb2hex(r, g, b);
+        }
+        function getColorForTime(t, palette) {
+            const stage = (t % 1.0) * 4;
+            const idx = Math.floor(stage);
+            const fraction = stage - idx;
+            if (idx >= 4) return palette[4];
+            return lerpColor(palette[idx], palette[idx + 1], fraction);
+        }
+
+        function buildGeometry() {
+            // Estrellas
+            cachedStars = [];
+            for (let i = 0; i < 150; i++) {
+                cachedStars.push({
+                    x: Math.random() * width,
+                    y: Math.random() * (height * 0.7),
+                    size: Math.random() * 1.5,
+                    brightness: Math.random()
+                });
+            }
+
+            // Montañas (Calculamos las caras tridimensionales una sola vez)
+            cachedMountains = [];
+            function createRidge(baseY, amplitude, segments) {
+                const points = [];
+                const faces = [];
+                const step = width / segments;
+                
+                for (let i = 0; i <= segments + 1; i++) {
+                    const noise = (Math.sin(i * 1.3) + Math.cos(i * 2.7) + (Math.random() * 2 - 1)) * 0.5;
+                    points.push({ x: i * step, y: baseY + noise * amplitude });
+                }
+
+                for (let i = 0; i < points.length - 1; i++) {
+                    const p1 = points[i];
+                    const p2 = points[i + 1];
+                    const rockDepth = Math.random() * 50 + 30;
+                    
+                    // Cara de roca que desciende
+                    const face = {
+                        p1: p1,
+                        p2: p2,
+                        p3: { x: p2.x - rockDepth * 0.5, y: p2.y + rockDepth },
+                        p4: { x: p1.x, y: p1.y + rockDepth * 0.8 },
+                        isFacingRight: p2.y > p1.y // Determina hacia dónde "mira" la ladera
+                    };
+                    faces.push(face);
+                }
+                cachedMountains.push({ points, faces, baseY });
+            }
+
+            // 3 Capas de montañas
+            createRidge(height * 0.5, 120, 18);
+            createRidge(height * 0.65, 80, 12);
+            createRidge(height * 0.8, 40, 8);
+
+            // Árboles (Pinos) en la colina frontal
+            cachedTrees = [];
+            const numTrees = Math.floor(width / 25);
+            for (let i = 0; i < numTrees; i++) {
+                const x = Math.random() * width;
+                const baseY = height * 0.8 + (Math.sin(x/ (width/10)) * 20) + Math.random() * 40;
+                const h = Math.random() * 70 + 50; 
+                const w = h * 0.5; 
+                const tiers = Math.floor(Math.random() * 2) + 4;
+                
+                const treeTiers = [];
+                for (let t = 0; t < tiers; t++) {
+                    const tierYTop = baseY - h + (t * (h / tiers));
+                    const tierYBottom = tierYTop + (h / tiers) * 1.5;
+                    const tierWidth = w * ((t + 1) / tiers);
+                    treeTiers.push({ yTop: tierYTop, yBot: tierYBottom, w: tierWidth });
+                }
+                cachedTrees.push({ x, y: baseY, h, w, tiers: treeTiers });
+            }
+        }
+
+        class Cloud {
+            constructor() {
+                this.x = Math.random() * width;
+                this.y = Math.random() * (height * 0.4); 
+                this.speed = Math.random() * 0.2 + 0.05;
+                this.scale = Math.random() * 0.8 + 0.4;
+                this.width = Math.random() * 300 + 150;
+            }
+            update() {
+                this.x += this.speed;
+                if (this.x > width + this.width) {
+                    this.x = -this.width;
+                    this.y = Math.random() * (height * 0.4);
+                }
+            }
+            draw(cloudColor) {
+                ctx.save();
+                ctx.globalAlpha = 0.15; // Más transparentes
+                ctx.translate(this.x, this.y);
+                ctx.scale(this.scale, this.scale);
+                ctx.fillStyle = cloudColor;
+                ctx.shadowColor = cloudColor;
+                ctx.shadowBlur = 40;
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.bezierCurveTo(30, -30, 80, -40, 120, -10);
+                ctx.bezierCurveTo(160, -30, 220, -20, 250, 10);
+                ctx.bezierCurveTo(300, 10, 320, 30, 280, 40);
+                ctx.bezierCurveTo(200, 50, 100, 50, 20, 30);
+                ctx.bezierCurveTo(-20, 20, -30, 0, 0, 0);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        class Pollen {
+            constructor() {
+                this.x = Math.random() * width;
+                this.y = height + Math.random() * 100;
+                this.size = Math.random() * 2 + 1;
+                this.vy = -(Math.random() * 0.4 + 0.1); 
+                this.vx = (Math.random() - 0.5) * 0.5;
+                this.phase = Math.random() * Math.PI * 2;
+            }
+            update() {
+                this.y += this.vy;
+                this.x += this.vx + Math.sin(time * 0.5 + this.phase) * 0.5;
+                if (this.y < -50) {
+                    this.y = height + 10;
+                    this.x = Math.random() * width;
+                }
+            }
+            draw(isNight) {
+                ctx.save();
+                // Brillan más de noche
+                const baseOpacity = isNight ? 0.8 : 0.3;
+                ctx.globalAlpha = Math.max(0, Math.min(1, baseOpacity + Math.sin(time * 2 + this.phase) * 0.5));
+                ctx.fillStyle = isNight ? '#FFF5B8' : '#FFD700';
+                ctx.shadowColor = isNight ? '#FFD700' : 'transparent';
+                ctx.shadowBlur = isNight ? 15 : 0;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        class Flower {
+            constructor() {
+                this.x = Math.random() * width;
+                const depth = Math.pow(Math.random(), 1.5); 
+                this.baseY = height * 0.8 + (1 - depth) * (height * 0.2); 
+                this.size = (1 - depth) * 18 + 10; 
+                this.color = Math.random() > 0.3 ? '#FFD700' : '#FFA500';
+                this.swayOffset = Math.random() * Math.PI * 2;
+                this.swaySpeed = Math.random() * 0.8 + 0.5;
+            }
+            draw(isNight) {
+                const swayAmount = Math.sin(time * this.swaySpeed + this.swayOffset) * (this.size * 1.5);
+                const currentX = this.x + swayAmount;
+                
+                ctx.save();
+                // Tallo
+                ctx.beginPath();
+                ctx.strokeStyle = isNight ? '#0a2412' : '#1b5e20'; 
+                ctx.lineWidth = this.size * 0.25;
+                ctx.moveTo(currentX, this.baseY - this.size * 2);
+                ctx.quadraticCurveTo(this.x, this.baseY, this.x, height + 100);
+                ctx.stroke();
+
+                // Cabeza de flor
+                ctx.translate(currentX, this.baseY - this.size * 2);
+                ctx.fillStyle = this.color;
+                
+                // Resplandor dorado de noche
+                if(isNight) {
+                    ctx.shadowColor = '#FFB300';
+                    ctx.shadowBlur = this.size * 1.5; 
+                }
+
+                for (let i = 0; i < 5; i++) {
+                    const angle = (i * Math.PI * 2) / 5;
+                    const px = Math.cos(angle) * this.size;
+                    const py = Math.sin(angle) * this.size;
+                    ctx.beginPath();
+                    ctx.arc(px, py, this.size * 0.75, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                
+                // Centro
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = isNight ? '#2a1202' : '#3e1d04';
+                ctx.beginPath();
+                ctx.arc(0, 0, this.size * 0.4, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        function spawnText() {
+            const text = phrases[Math.floor(Math.random() * phrases.length)];
+            const textEl = document.createElement('div');
+            textEl.classList.add('floating-text');
+            textEl.textContent = text;
+            
+            // Nace en cualquier parte horizontal
+            textEl.style.left = `${Math.random() * 80 + 10}%`; 
+            textEl.style.transform = `translateX(-50%)`;
+
+            const isMobile = window.innerWidth <= 768;
+            const minSize = isMobile ? 1.2 : 1.6;
+            const maxSize = isMobile ? 1.8 : 2.8;
+            textEl.style.fontSize = `${Math.random() * (maxSize - minSize) + minSize}rem`;
+
+            const duration = 25 + Math.random() * 10;
+            textEl.style.animation = `floatUpSlow ${duration}s cubic-bezier(0.25, 0.1, 0.25, 1) forwards`;
+            
+            textContainer.appendChild(textEl);
+            textEl.addEventListener('animationend', () => textEl.remove());
+        }
+
+        function scheduleTexts() {
+            const delay = 7000 + Math.random() * 5000; 
+            setTimeout(() => {
+                spawnText();
+                scheduleTexts();
+            }, delay);
+        }
+
+        function drawScene() {
+            // Avanzar el tiempo
+            cycleTime += cycleSpeed;
+            if (cycleTime > 1) cycleTime -= 1;
+            
+            // Estados de tiempo
+            const isNight = cycleTime < 0.2 || cycleTime > 0.8;
+            const skyTop = getColorForTime(cycleTime, pSkyTop);
+            const skyBot = getColorForTime(cycleTime, pSkyBot);
+            const mountShad = getColorForTime(cycleTime, pMountShadow);
+            const mountHigh = getColorForTime(cycleTime, pMountHighlight);
+            const pineShad = getColorForTime(cycleTime, pPineShadow);
+            const pineHigh = getColorForTime(cycleTime, pPineHighlight);
+
+            // 1. Dibujar Cielo
+            let gradient = ctx.createLinearGradient(0, 0, 0, height);
+            gradient.addColorStop(0, skyTop);
+            gradient.addColorStop(1, skyBot);
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, width, height);
+
+            // 2. Estrellas (visibles solo de noche)
+            let starOpacity = 1;
+            if (cycleTime > 0.15 && cycleTime <= 0.25) starOpacity = 1 - ((cycleTime - 0.15) * 10);
+            else if (cycleTime > 0.25 && cycleTime < 0.75) starOpacity = 0;
+            else if (cycleTime >= 0.75 && cycleTime < 0.85) starOpacity = (cycleTime - 0.75) * 10;
+
+            if (starOpacity > 0) {
+                ctx.save();
+                cachedStars.forEach(s => {
+                    const twinkle = Math.sin(time * 3 + s.brightness * 10) * 0.5 + 0.5;
+                    ctx.fillStyle = `rgba(255, 255, 255, ${s.brightness * starOpacity * twinkle})`;
+                    ctx.beginPath();
+                    ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+                ctx.restore();
+            }
+
+            // 3. Órbitas del Sol y la Luna (Geometría de elipse)
+            const sunAngle = (cycleTime * Math.PI * 2) - Math.PI/2; 
+            const moonAngle = sunAngle + Math.PI;
+            
+            const getOrbitPos = (angle) => {
+                const cx = width / 2;
+                const cy = height * 0.8; 
+                const r = width * 0.45;
+                return {
+                    x: cx + Math.cos(angle) * r,
+                    y: cy + Math.sin(angle) * r * 0.7
+                };
+            };
+
+            const sunPos = getOrbitPos(sunAngle);
+            const moonPos = getOrbitPos(moonAngle);
+
+            // Dibujar Sol
+            if (sunPos.y < height) {
+                ctx.save();
+                ctx.fillStyle = '#FFFDE7';
+                ctx.shadowColor = '#FFB300';
+                ctx.shadowBlur = 100;
+                ctx.beginPath();
+                ctx.arc(sunPos.x, sunPos.y, width * 0.05, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            // Dibujar Luna
+            if (moonPos.y < height) {
+                ctx.save();
+                ctx.fillStyle = '#f0f4f8';
+                ctx.shadowColor = '#bdf1ff';
+                ctx.shadowBlur = 80;
+                ctx.beginPath();
+                ctx.arc(moonPos.x, moonPos.y, width * 0.04, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            // Determinar fuente de luz principal para sombras dinámicas
+            let lightX = (cycleTime > 0.25 && cycleTime < 0.75) ? sunPos.x : moonPos.x;
+
+            // 4. Dibujar Nubes
+            const cloudColor = isNight ? '#1a2744' : '#ffffff';
+            clouds.forEach(c => { c.update(); c.draw(cloudColor); });
+
+            // 5. Dibujar Montañas con relieve dinámico
+            cachedMountains.forEach(layer => {
+                // Sombra Base
+                ctx.fillStyle = mountShad;
+                ctx.beginPath();
+                ctx.moveTo(0, height);
+                layer.points.forEach(p => ctx.lineTo(p.x, p.y));
+                ctx.lineTo(width, height);
+                ctx.fill();
+
+                // Caras iluminadas
+                layer.faces.forEach(face => {
+                    const faceCenterX = (face.p1.x + face.p2.x) / 2;
+                    const lightFromRight = lightX > faceCenterX;
+                    
+                    // Si la ladera mira hacia la luz, se ilumina
+                    if (face.isFacingRight === lightFromRight) {
+                        ctx.fillStyle = mountHigh;
+                        ctx.beginPath();
+                        ctx.moveTo(face.p1.x, face.p1.y);
+                        ctx.lineTo(face.p2.x, face.p2.y);
+                        ctx.lineTo(face.p3.x, face.p3.y);
+                        ctx.lineTo(face.p4.x, face.p4.y);
+                        ctx.fill();
+                    }
+                });
+            });
+
+            // 6. Dibujar Pinos con sombras dinámicas
+            cachedTrees.forEach(tree => {
+                const lightFromRight = lightX > tree.x;
+
+                ctx.fillStyle = '#050302'; // Tronco
+                ctx.fillRect(tree.x - tree.w*0.05, tree.y - tree.h, tree.w*0.1, tree.h);
+
+                tree.tiers.forEach(tier => {
+                    // Lado Izquierdo
+                    ctx.fillStyle = lightFromRight ? pineShad : pineHigh;
+                    ctx.beginPath();
+                    ctx.moveTo(tree.x, tier.yTop);
+                    ctx.lineTo(tree.x - tier.w*0.5, tier.yBot);
+                    ctx.lineTo(tree.x - tier.w*0.2, tier.yBot - tree.h*0.05);
+                    ctx.lineTo(tree.x, tier.yBot);
+                    ctx.fill();
+
+                    // Lado Derecho
+                    ctx.fillStyle = lightFromRight ? pineHigh : pineShad;
+                    ctx.beginPath();
+                    ctx.moveTo(tree.x, tier.yTop);
+                    ctx.lineTo(tree.x + tier.w*0.5, tier.yBot);
+                    ctx.lineTo(tree.x + tier.w*0.2, tier.yBot - tree.h*0.05);
+                    ctx.lineTo(tree.x, tier.yBot);
+                    ctx.fill();
+                });
+            });
+
+            // 7. Flores y Polen
+            flowers.forEach(f => f.draw(isNight));
+            pollenParticles.forEach(p => { p.update(); p.draw(isNight); });
+        }
+
+        let resizeTimer;
+        function initScene() {
+            // Manejo de pantallas de alta densidad (Retina)
+            dpr = window.devicePixelRatio || 1;
+            width = window.innerWidth;
+            height = window.innerHeight;
+            
+            canvas.width = width * dpr;
+            canvas.height = height * dpr;
+            ctx.scale(dpr, dpr);
+            
+            buildGeometry();
+            
+            clouds = [];
+            flowers = [];
+            pollenParticles = [];
+            
+            for (let i = 0; i < 6; i++) clouds.push(new Cloud());
+            
+            const flowerCount = Math.floor(width / 3.5); 
+            for (let i = 0; i < flowerCount; i++) flowers.push(new Flower());
+            flowers.sort((a, b) => a.baseY - b.baseY); 
+
+            for (let i = 0; i < 70; i++) pollenParticles.push(new Pollen());
+        }
+
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(initScene, 200); // Debounce para no trabar al girar pantalla
+        });
+
+        function animate(timestamp) {
+            time = timestamp * 0.001; 
+            ctx.clearRect(0, 0, width, height);
+            drawScene();
+            requestAnimationFrame(animate);
+        }
+
+        window.onload = () => {
+            initScene();
+            requestAnimationFrame(animate);
+            setTimeout(() => {
+                spawnText();
+                scheduleTexts();
+            }, 3000);
+        };
+    </script>
+</body>
+</html>
