@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Feliz 21 de Septiembre - Paisaje Realista</title>
+    <title>Feliz 21 de Septiembre - Flores Amarillas</title>
     <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Montserrat:wght@300&display=swap" rel="stylesheet">
     
     <style>
@@ -19,7 +19,8 @@
             overflow: hidden;
             font-family: 'Great Vibes', cursive;
             width: 100vw;
-            height: 100vh;
+            height: 100dvh; /* Adaptable a barras de navegadores móviles */
+            position: fixed;
         }
 
         #sceneCanvas {
@@ -54,34 +55,61 @@
             opacity: 0;
             will-change: transform, opacity;
             letter-spacing: 2px;
-            white-space: nowrap;
+            /* Evita que se corte en los bordes de celular */
+            max-width: 90vw;
+            white-space: normal;
+            word-wrap: break-word;
         }
 
-        @media (max-width: 768px) {
-            .floating-text {
-                white-space: normal;
-                width: 90%;
-            }
+        /* Pantalla de inicio para permitir el audio */
+        #start-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100dvh;
+            background: linear-gradient(135deg, #010414 0%, #1a2a6c 100%);
+            z-index: 9999;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            cursor: pointer;
+            transition: opacity 1.5s ease;
         }
 
-        /* Animación extremadamente lenta para legibilidad */
+        .start-text {
+            color: #FFD700;
+            font-size: 2.5rem;
+            text-align: center;
+            padding: 20px;
+            text-shadow: 0 0 20px rgba(255, 215, 0, 0.8);
+            animation: pulseText 2s infinite;
+        }
+
+        @keyframes pulseText {
+            0% { transform: scale(1); opacity: 0.8; }
+            50% { transform: scale(1.05); opacity: 1; text-shadow: 0 0 30px rgba(255, 215, 0, 1); }
+            100% { transform: scale(1); opacity: 0.8; }
+        }
+
         @keyframes floatUpSlow {
             0% {
-                transform: translateY(105vh) scale(0.8);
+                transform: translate(-50%, 100vh) scale(0.8);
                 opacity: 0;
                 filter: blur(3px);
             }
             15% {
                 opacity: 1;
                 filter: blur(0px);
-                transform: translateY(75vh) scale(1);
+                transform: translate(-50%, 75vh) scale(1);
             }
             85% {
                 opacity: 1;
                 filter: blur(0px);
             }
             100% {
-                transform: translateY(-20vh) scale(1.1);
+                transform: translate(-50%, -20vh) scale(1.1);
                 opacity: 0;
                 filter: blur(3px);
             }
@@ -90,20 +118,75 @@
 </head>
 <body>
 
+    <!-- Pantalla de Bienvenida -->
+    <div id="start-overlay">
+        <div class="start-text">Toca la pantalla para comenzar la magia...</div>
+    </div>
+
+    <!-- Contenedor invisible para YouTube -->
+    <div id="player-container" style="display: none;"></div>
+
     <canvas id="sceneCanvas"></canvas>
     <div id="text-container"></div>
 
+    <!-- API de YouTube -->
+    <script src="https://www.youtube.com/iframe_api"></script>
+
     <script>
+        // --- SISTEMA DE AUDIO DE YOUTUBE ---
+        let player;
+        let isSceneStarted = false;
+
+        function onYouTubeIframeAPIReady() {
+            player = new YT.Player('player-container', {
+                height: '0',
+                width: '0',
+                videoId: 'KoFjwzqiJI8', // ID de tu canción
+                playerVars: {
+                    'autoplay': 0,
+                    'controls': 0,
+                    'loop': 1,
+                    'playlist': 'KoFjwzqiJI8' // Necesario para que el bucle funcione en YouTube
+                }
+            });
+        }
+
+        // Evento de toque para iniciar todo
+        document.getElementById('start-overlay').addEventListener('click', function() {
+            if (isSceneStarted) return;
+            isSceneStarted = true;
+
+            // Reproducir música
+            if (player && typeof player.playVideo === 'function') {
+                player.playVideo();
+            }
+
+            // Ocultar pantalla de bienvenida
+            this.style.opacity = '0';
+            setTimeout(() => {
+                this.style.display = 'none';
+            }, 1500);
+
+            // Iniciar Paisaje
+            initScene();
+            requestAnimationFrame(animate);
+            setTimeout(() => {
+                spawnText();
+                scheduleTexts();
+            }, 3000);
+        });
+
+
+        // --- MOTOR DEL PAISAJE ---
         const canvas = document.getElementById('sceneCanvas');
         const ctx = canvas.getContext('2d');
         const textContainer = document.getElementById('text-container');
 
         let width, height, dpr;
         let time = 0;
-        let cycleTime = 0.1; // 0.0 = Medianoche, 0.25 = Amanecer, 0.5 = Mediodía, 0.75 = Atardecer
-        const cycleSpeed = 0.0003; // Velocidad del ciclo día/noche
+        let cycleTime = 0.1; 
+        const cycleSpeed = 0.0002; 
 
-        // Paletas de color para el ciclo (Interpolación de 5 puntos: Medianoche -> Amanecer -> Mediodía -> Atardecer -> Medianoche)
         const pSkyTop = ['#010414', '#1a2a6c', '#4CB8C4', '#3c1854', '#010414'];
         const pSkyBot = ['#0a1636', '#fd746c', '#bdf1ff', '#e85d04', '#0a1636'];
         const pMountShadow = ['#060a14', '#1f1315', '#163321', '#1a0e14', '#060a14'];
@@ -111,7 +194,6 @@
         const pPineShadow = ['#020805', '#12100d', '#0b2413', '#0f0a0c', '#020805'];
         const pPineHighlight = ['#061a11', '#4a3224', '#265431', '#3b1c24', '#061a11'];
         
-        // Estructuras de caché geométrico
         let cachedStars = [];
         let cachedMountains = [];
         let cachedTrees = [];
@@ -132,12 +214,12 @@
             "Mi refugio y mi luz"
         ];
 
-        // Utilidades de interpolación de colores
         function hex2rgb(hex) {
             const v = parseInt(hex.replace('#', ''), 16);
             return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
         }
         function rgb2hex(r, g, b) {
+            // El .slice(1) y el padStart solucionan el error de los códigos de colores incompletos
             return "#" + (1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1);
         }
         function lerpColor(c1, c2, t) {
@@ -157,9 +239,8 @@
         }
 
         function buildGeometry() {
-            // Estrellas
             cachedStars = [];
-            for (let i = 0; i < 150; i++) {
+            for (let i = 0; i < 200; i++) {
                 cachedStars.push({
                     x: Math.random() * width,
                     y: Math.random() * (height * 0.7),
@@ -168,7 +249,6 @@
                 });
             }
 
-            // Montañas (Calculamos las caras tridimensionales una sola vez)
             cachedMountains = [];
             function createRidge(baseY, amplitude, segments) {
                 const points = [];
@@ -183,40 +263,37 @@
                 for (let i = 0; i < points.length - 1; i++) {
                     const p1 = points[i];
                     const p2 = points[i + 1];
-                    const rockDepth = Math.random() * 50 + 30;
+                    const rockDepth = Math.random() * 60 + 40;
                     
-                    // Cara de roca que desciende
                     const face = {
                         p1: p1,
                         p2: p2,
                         p3: { x: p2.x - rockDepth * 0.5, y: p2.y + rockDepth },
                         p4: { x: p1.x, y: p1.y + rockDepth * 0.8 },
-                        isFacingRight: p2.y > p1.y // Determina hacia dónde "mira" la ladera
+                        isFacingRight: p2.y > p1.y 
                     };
                     faces.push(face);
                 }
                 cachedMountains.push({ points, faces, baseY });
             }
 
-            // 3 Capas de montañas
-            createRidge(height * 0.5, 120, 18);
-            createRidge(height * 0.65, 80, 12);
-            createRidge(height * 0.8, 40, 8);
+            createRidge(height * 0.45, 150, 20);
+            createRidge(height * 0.60, 100, 14);
+            createRidge(height * 0.75, 50, 9);
 
-            // Árboles (Pinos) en la colina frontal
             cachedTrees = [];
-            const numTrees = Math.floor(width / 25);
+            const numTrees = Math.floor(width / 30);
             for (let i = 0; i < numTrees; i++) {
                 const x = Math.random() * width;
-                const baseY = height * 0.8 + (Math.sin(x/ (width/10)) * 20) + Math.random() * 40;
-                const h = Math.random() * 70 + 50; 
-                const w = h * 0.5; 
+                const baseY = height * 0.75 + (Math.sin(x/ (width/10)) * 20) + Math.random() * 40;
+                const h = Math.random() * 80 + 60; 
+                const w = h * 0.6; 
                 const tiers = Math.floor(Math.random() * 2) + 4;
                 
                 const treeTiers = [];
                 for (let t = 0; t < tiers; t++) {
                     const tierYTop = baseY - h + (t * (h / tiers));
-                    const tierYBottom = tierYTop + (h / tiers) * 1.5;
+                    const tierYBottom = tierYTop + (h / tiers) * 1.6;
                     const tierWidth = w * ((t + 1) / tiers);
                     treeTiers.push({ yTop: tierYTop, yBot: tierYBottom, w: tierWidth });
                 }
@@ -230,30 +307,29 @@
                 this.y = Math.random() * (height * 0.4); 
                 this.speed = Math.random() * 0.2 + 0.05;
                 this.scale = Math.random() * 0.8 + 0.4;
-                this.width = Math.random() * 300 + 150;
             }
             update() {
                 this.x += this.speed;
-                if (this.x > width + this.width) {
-                    this.x = -this.width;
+                if (this.x > width + 400) {
+                    this.x = -400;
                     this.y = Math.random() * (height * 0.4);
                 }
             }
             draw(cloudColor) {
                 ctx.save();
-                ctx.globalAlpha = 0.15; // Más transparentes
+                ctx.globalAlpha = 0.12; 
                 ctx.translate(this.x, this.y);
                 ctx.scale(this.scale, this.scale);
                 ctx.fillStyle = cloudColor;
                 ctx.shadowColor = cloudColor;
-                ctx.shadowBlur = 40;
+                ctx.shadowBlur = 30;
                 ctx.beginPath();
                 ctx.moveTo(0, 0);
-                ctx.bezierCurveTo(30, -30, 80, -40, 120, -10);
-                ctx.bezierCurveTo(160, -30, 220, -20, 250, 10);
-                ctx.bezierCurveTo(300, 10, 320, 30, 280, 40);
-                ctx.bezierCurveTo(200, 50, 100, 50, 20, 30);
-                ctx.bezierCurveTo(-20, 20, -30, 0, 0, 0);
+                ctx.bezierCurveTo(40, -40, 100, -50, 150, -10);
+                ctx.bezierCurveTo(200, -40, 280, -30, 320, 10);
+                ctx.bezierCurveTo(380, 10, 400, 40, 350, 50);
+                ctx.bezierCurveTo(250, 60, 120, 60, 20, 40);
+                ctx.bezierCurveTo(-20, 30, -30, 0, 0, 0);
                 ctx.fill();
                 ctx.restore();
             }
@@ -278,7 +354,6 @@
             }
             draw(isNight) {
                 ctx.save();
-                // Brillan más de noche
                 const baseOpacity = isNight ? 0.8 : 0.3;
                 ctx.globalAlpha = Math.max(0, Math.min(1, baseOpacity + Math.sin(time * 2 + this.phase) * 0.5));
                 ctx.fillStyle = isNight ? '#FFF5B8' : '#FFD700';
@@ -295,18 +370,17 @@
             constructor() {
                 this.x = Math.random() * width;
                 const depth = Math.pow(Math.random(), 1.5); 
-                this.baseY = height * 0.8 + (1 - depth) * (height * 0.2); 
-                this.size = (1 - depth) * 18 + 10; 
+                this.baseY = height * 0.85 + (1 - depth) * (height * 0.15); 
+                this.size = (1 - depth) * 20 + 10; 
                 this.color = Math.random() > 0.3 ? '#FFD700' : '#FFA500';
                 this.swayOffset = Math.random() * Math.PI * 2;
                 this.swaySpeed = Math.random() * 0.8 + 0.5;
             }
             draw(isNight) {
-                const swayAmount = Math.sin(time * this.swaySpeed + this.swayOffset) * (this.size * 1.5);
+                const swayAmount = Math.sin(time * this.swaySpeed + this.swayOffset) * (this.size * 1.2);
                 const currentX = this.x + swayAmount;
                 
                 ctx.save();
-                // Tallo
                 ctx.beginPath();
                 ctx.strokeStyle = isNight ? '#0a2412' : '#1b5e20'; 
                 ctx.lineWidth = this.size * 0.25;
@@ -314,11 +388,9 @@
                 ctx.quadraticCurveTo(this.x, this.baseY, this.x, height + 100);
                 ctx.stroke();
 
-                // Cabeza de flor
                 ctx.translate(currentX, this.baseY - this.size * 2);
                 ctx.fillStyle = this.color;
                 
-                // Resplandor dorado de noche
                 if(isNight) {
                     ctx.shadowColor = '#FFB300';
                     ctx.shadowBlur = this.size * 1.5; 
@@ -333,7 +405,6 @@
                     ctx.fill();
                 }
                 
-                // Centro
                 ctx.shadowBlur = 0;
                 ctx.fillStyle = isNight ? '#2a1202' : '#3e1d04';
                 ctx.beginPath();
@@ -349,13 +420,14 @@
             textEl.classList.add('floating-text');
             textEl.textContent = text;
             
-            // Nace en cualquier parte horizontal
-            textEl.style.left = `${Math.random() * 80 + 10}%`; 
-            textEl.style.transform = `translateX(-50%)`;
+            // Posición horizontal (10% al 90% para que no toquen los bordes)
+            const randomLeft = Math.random() * 80 + 10;
+            textEl.style.left = `${randomLeft}%`; 
 
+            // Tamaños variados adaptables a celular y PC
             const isMobile = window.innerWidth <= 768;
-            const minSize = isMobile ? 1.2 : 1.6;
-            const maxSize = isMobile ? 1.8 : 2.8;
+            const minSize = isMobile ? 1.4 : 2.0;
+            const maxSize = isMobile ? 2.2 : 3.5;
             textEl.style.fontSize = `${Math.random() * (maxSize - minSize) + minSize}rem`;
 
             const duration = 25 + Math.random() * 10;
@@ -366,7 +438,7 @@
         }
 
         function scheduleTexts() {
-            const delay = 7000 + Math.random() * 5000; 
+            const delay = 6000 + Math.random() * 4000; 
             setTimeout(() => {
                 spawnText();
                 scheduleTexts();
@@ -374,11 +446,9 @@
         }
 
         function drawScene() {
-            // Avanzar el tiempo
             cycleTime += cycleSpeed;
             if (cycleTime > 1) cycleTime -= 1;
             
-            // Estados de tiempo
             const isNight = cycleTime < 0.2 || cycleTime > 0.8;
             const skyTop = getColorForTime(cycleTime, pSkyTop);
             const skyBot = getColorForTime(cycleTime, pSkyBot);
@@ -387,14 +457,12 @@
             const pineShad = getColorForTime(cycleTime, pPineShadow);
             const pineHigh = getColorForTime(cycleTime, pPineHighlight);
 
-            // 1. Dibujar Cielo
             let gradient = ctx.createLinearGradient(0, 0, 0, height);
             gradient.addColorStop(0, skyTop);
             gradient.addColorStop(1, skyBot);
             ctx.fillStyle = gradient;
             ctx.fillRect(0, 0, width, height);
 
-            // 2. Estrellas (visibles solo de noche)
             let starOpacity = 1;
             if (cycleTime > 0.15 && cycleTime <= 0.25) starOpacity = 1 - ((cycleTime - 0.15) * 10);
             else if (cycleTime > 0.25 && cycleTime < 0.75) starOpacity = 0;
@@ -412,14 +480,13 @@
                 ctx.restore();
             }
 
-            // 3. Órbitas del Sol y la Luna (Geometría de elipse)
             const sunAngle = (cycleTime * Math.PI * 2) - Math.PI/2; 
             const moonAngle = sunAngle + Math.PI;
             
             const getOrbitPos = (angle) => {
                 const cx = width / 2;
                 const cy = height * 0.8; 
-                const r = width * 0.45;
+                const r = Math.min(width, height) * 0.6;
                 return {
                     x: cx + Math.cos(angle) * r,
                     y: cy + Math.sin(angle) * r * 0.7
@@ -429,40 +496,34 @@
             const sunPos = getOrbitPos(sunAngle);
             const moonPos = getOrbitPos(moonAngle);
 
-            // Dibujar Sol
-            if (sunPos.y < height) {
+            if (sunPos.y < height + 100) {
                 ctx.save();
                 ctx.fillStyle = '#FFFDE7';
                 ctx.shadowColor = '#FFB300';
                 ctx.shadowBlur = 100;
                 ctx.beginPath();
-                ctx.arc(sunPos.x, sunPos.y, width * 0.05, 0, Math.PI * 2);
+                ctx.arc(sunPos.x, sunPos.y, Math.min(width, height) * 0.08, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.restore();
             }
 
-            // Dibujar Luna
-            if (moonPos.y < height) {
+            if (moonPos.y < height + 100) {
                 ctx.save();
                 ctx.fillStyle = '#f0f4f8';
                 ctx.shadowColor = '#bdf1ff';
                 ctx.shadowBlur = 80;
                 ctx.beginPath();
-                ctx.arc(moonPos.x, moonPos.y, width * 0.04, 0, Math.PI * 2);
+                ctx.arc(moonPos.x, moonPos.y, Math.min(width, height) * 0.06, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.restore();
             }
 
-            // Determinar fuente de luz principal para sombras dinámicas
             let lightX = (cycleTime > 0.25 && cycleTime < 0.75) ? sunPos.x : moonPos.x;
 
-            // 4. Dibujar Nubes
             const cloudColor = isNight ? '#1a2744' : '#ffffff';
             clouds.forEach(c => { c.update(); c.draw(cloudColor); });
 
-            // 5. Dibujar Montañas con relieve dinámico
             cachedMountains.forEach(layer => {
-                // Sombra Base
                 ctx.fillStyle = mountShad;
                 ctx.beginPath();
                 ctx.moveTo(0, height);
@@ -470,12 +531,10 @@
                 ctx.lineTo(width, height);
                 ctx.fill();
 
-                // Caras iluminadas
                 layer.faces.forEach(face => {
                     const faceCenterX = (face.p1.x + face.p2.x) / 2;
                     const lightFromRight = lightX > faceCenterX;
                     
-                    // Si la ladera mira hacia la luz, se ilumina
                     if (face.isFacingRight === lightFromRight) {
                         ctx.fillStyle = mountHigh;
                         ctx.beginPath();
@@ -488,15 +547,13 @@
                 });
             });
 
-            // 6. Dibujar Pinos con sombras dinámicas
             cachedTrees.forEach(tree => {
                 const lightFromRight = lightX > tree.x;
 
-                ctx.fillStyle = '#050302'; // Tronco
+                ctx.fillStyle = '#050302'; 
                 ctx.fillRect(tree.x - tree.w*0.05, tree.y - tree.h, tree.w*0.1, tree.h);
 
                 tree.tiers.forEach(tier => {
-                    // Lado Izquierdo
                     ctx.fillStyle = lightFromRight ? pineShad : pineHigh;
                     ctx.beginPath();
                     ctx.moveTo(tree.x, tier.yTop);
@@ -505,7 +562,6 @@
                     ctx.lineTo(tree.x, tier.yBot);
                     ctx.fill();
 
-                    // Lado Derecho
                     ctx.fillStyle = lightFromRight ? pineHigh : pineShad;
                     ctx.beginPath();
                     ctx.moveTo(tree.x, tier.yTop);
@@ -516,14 +572,12 @@
                 });
             });
 
-            // 7. Flores y Polen
             flowers.forEach(f => f.draw(isNight));
             pollenParticles.forEach(p => { p.update(); p.draw(isNight); });
         }
 
         let resizeTimer;
         function initScene() {
-            // Manejo de pantallas de alta densidad (Retina)
             dpr = window.devicePixelRatio || 1;
             width = window.innerWidth;
             height = window.innerHeight;
@@ -538,18 +592,19 @@
             flowers = [];
             pollenParticles = [];
             
-            for (let i = 0; i < 6; i++) clouds.push(new Cloud());
+            for (let i = 0; i < 8; i++) clouds.push(new Cloud());
             
-            const flowerCount = Math.floor(width / 3.5); 
+            const flowerCount = Math.floor(width / 5); 
             for (let i = 0; i < flowerCount; i++) flowers.push(new Flower());
             flowers.sort((a, b) => a.baseY - b.baseY); 
 
-            for (let i = 0; i < 70; i++) pollenParticles.push(new Pollen());
+            for (let i = 0; i < 80; i++) pollenParticles.push(new Pollen());
         }
 
         window.addEventListener('resize', () => {
+            if(!isSceneStarted) return;
             clearTimeout(resizeTimer);
-            resizeTimer = setTimeout(initScene, 200); // Debounce para no trabar al girar pantalla
+            resizeTimer = setTimeout(initScene, 200); 
         });
 
         function animate(timestamp) {
@@ -558,15 +613,6 @@
             drawScene();
             requestAnimationFrame(animate);
         }
-
-        window.onload = () => {
-            initScene();
-            requestAnimationFrame(animate);
-            setTimeout(() => {
-                spawnText();
-                scheduleTexts();
-            }, 3000);
-        };
     </script>
 </body>
 </html>
